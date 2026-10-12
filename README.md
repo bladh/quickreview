@@ -27,7 +27,7 @@ Inspired by GitHub pull-request review and clients like SmartGit: browse branche
 ### Linux packages (Debian/Ubuntu)
 
 ```bash
-sudo apt install gcc libgl1-mesa-dev xorg-dev
+sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
 ```
 
 ## Build & run

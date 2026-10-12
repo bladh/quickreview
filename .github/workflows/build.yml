@@ -25,7 +25,8 @@ jobs:
       - name: Install Linux Fyne dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+          # Fyne 2.8+ / GLFW 3.4 needs Wayland headers on Linux (X11 alone is no longer enough)
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
 
       - name: Test
         run: go test ./...
@@ -75,7 +76,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev zip
+          # Fyne 2.8+ / GLFW 3.4 needs Wayland headers on Linux (X11 alone is no longer enough)
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev zip
 
       - name: Build
         env:
