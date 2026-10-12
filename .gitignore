@@ -1,0 +1,51 @@
+# Binaries / build output
+/quickreview
+/quickreview.exe
+/quickreview-*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.app
+*.syso
+dist/
+bin/
+build/
+fyne-cross/
+
+# Test / coverage
+*.test
+*.out
+coverage.html
+coverage.txt
+profile.cov
+*.coverprofile
+*.prof
+*.pprof
+cpu.out
+mem.out
+
+# Go workspace (local only)
+go.work
+go.work.sum
+
+# Dependency directories (prefer go.mod/go.sum)
+vendor/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Debug / local env
+*.log
+.env
+.env.*

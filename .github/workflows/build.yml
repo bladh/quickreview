@@ -1,0 +1,111 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux Fyne dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+
+      - name: Test
+        run: go test ./...
+
+  build:
+    name: Build (${{ matrix.artifact }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: quickreview-linux-amd64
+            binary: quickreview
+            packaged: quickreview-linux-amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: quickreview-windows-amd64
+            binary: quickreview.exe
+            packaged: quickreview-windows-amd64.exe
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            artifact: quickreview-darwin-amd64
+            binary: quickreview
+            packaged: quickreview-darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: quickreview-darwin-arm64
+            binary: quickreview
+            packaged: quickreview-darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev zip
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: go build -trimpath -ldflags="-s -w" -o "${{ matrix.binary }}" .
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary }}" "dist/${{ matrix.packaged }}"
+          if [[ "${{ matrix.goos }}" != "windows" ]]; then
+            chmod +x "dist/${{ matrix.packaged }}"
+          fi
+          cp README.md dist/
+          (
+            cd dist
+            if [[ "${{ runner.os }}" == "Windows" ]]; then
+              7z a "../${{ matrix.artifact }}.zip" .
+            else
+              zip -r "../${{ matrix.artifact }}.zip" .
+            fi
+          )
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 30
