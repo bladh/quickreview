@@ -55,7 +55,7 @@ jobs:
             artifact: quickreview-windows-amd64
             binary: quickreview.exe
             packaged: quickreview-windows-amd64.exe
-          - os: macos-13
+          - os: macos-latest
             goos: darwin
             goarch: amd64
             artifact: quickreview-darwin-amd64
