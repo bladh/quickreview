@@ -34,9 +34,9 @@ type DiffView struct {
 	unified []diff.Line
 	split   []diff.SplitRow
 
-	list   *widget.List
-	empty  *canvas.Text
-	stack  *fyne.Container
+	list  *widget.List
+	empty *canvas.Text
+	stack *fyne.Container
 }
 
 func NewDiffView() *DiffView {
@@ -64,7 +64,11 @@ func (v *DiffView) SetMode(mode DiffMode) {
 		return
 	}
 	v.mode = mode
-	// Row templates differ by mode; rebuild the list so items match.
+	v.rebuildList()
+}
+
+func (v *DiffView) rebuildList() {
+	// Row templates differ by mode and bake in palette colors at create time.
 	v.list = widget.NewList(
 		func() int { return v.rowCount() },
 		func() fyne.CanvasObject { return v.createRowTemplate() },
@@ -108,6 +112,13 @@ func (v *DiffView) Clear() {
 	v.unified = nil
 	v.split = nil
 	v.showEmpty("Select a changed file to review")
+}
+
+// applyPalette refreshes empty-state and row chrome after the diff palette changes.
+func (v *DiffView) applyPalette() {
+	v.empty.Color = colorLineNoFg
+	v.empty.Refresh()
+	v.rebuildList()
 }
 
 func (v *DiffView) showEmpty(msg string) {
@@ -161,6 +172,8 @@ func (v *DiffView) updateRow(id widget.ListItemID, obj fyne.CanvasObject) {
 type unifiedRowWidget struct {
 	widget.BaseWidget
 	bg           *canvas.Rectangle
+	lineNoBg     *canvas.Rectangle
+	gutterBg     *canvas.Rectangle
 	oldNo, newNo *canvas.Text
 	gutter       *canvas.Text
 	code         *canvas.Text
@@ -169,11 +182,13 @@ type unifiedRowWidget struct {
 
 func newUnifiedRowWidget() *unifiedRowWidget {
 	r := &unifiedRowWidget{
-		bg:     canvas.NewRectangle(colorCtxBg),
-		oldNo:  canvas.NewText("", colorLineNoFg),
-		newNo:  canvas.NewText("", colorLineNoFg),
-		gutter: canvas.NewText(" ", theme.ForegroundColor()),
-		code:   canvas.NewText("", theme.ForegroundColor()),
+		bg:       canvas.NewRectangle(colorCtxBg),
+		lineNoBg: canvas.NewRectangle(colorLineNoBg),
+		gutterBg: canvas.NewRectangle(colorCtxBg),
+		oldNo:    canvas.NewText("", colorLineNoFg),
+		newNo:    canvas.NewText("", colorLineNoFg),
+		gutter:   canvas.NewText(" ", theme.ForegroundColor()),
+		code:     canvas.NewText("", theme.ForegroundColor()),
 	}
 	r.oldNo.TextSize, r.newNo.TextSize = 11, 11
 	r.oldNo.TextStyle = fyne.TextStyle{Monospace: true}
@@ -186,11 +201,9 @@ func newUnifiedRowWidget() *unifiedRowWidget {
 	r.code.TextSize = 12
 	r.code.TextStyle = fyne.TextStyle{Monospace: true}
 
-	lineNoBg := canvas.NewRectangle(colorLineNoBg)
 	nums := container.New(layout.NewGridLayout(2), r.oldNo, r.newNo)
-	left := container.NewStack(lineNoBg, nums)
-	gutterBg := canvas.NewRectangle(colorCtxBg)
-	gutterBox := container.NewStack(gutterBg, container.NewCenter(r.gutter))
+	left := container.NewStack(r.lineNoBg, nums)
+	gutterBox := container.NewStack(r.gutterBg, container.NewCenter(r.gutter))
 
 	r.content = container.NewStack(r.bg,
 		container.NewBorder(nil, nil,
@@ -209,13 +222,19 @@ func newUnifiedRowWidget() *unifiedRowWidget {
 func (r *unifiedRowWidget) Set(ln diff.Line) {
 	bg, fg, prefix, oldS, newS := unifiedStyle(ln)
 	r.bg.FillColor = bg
+	r.lineNoBg.FillColor = colorLineNoBg
+	r.gutterBg.FillColor = bg
 	r.oldNo.Text = oldS
+	r.oldNo.Color = colorLineNoFg
 	r.newNo.Text = newS
+	r.newNo.Color = colorLineNoFg
 	r.gutter.Text = prefix
 	r.gutter.Color = fg
 	r.code.Text = ln.Text
 	r.code.Color = fg
 	r.bg.Refresh()
+	r.lineNoBg.Refresh()
+	r.gutterBg.Refresh()
 	r.oldNo.Refresh()
 	r.newNo.Refresh()
 	r.gutter.Refresh()
@@ -234,23 +253,26 @@ func (r *unifiedRowWidget) MinSize() fyne.Size {
 
 type splitRowWidget struct {
 	widget.BaseWidget
-	leftBG, rightBG     *canvas.Rectangle
-	leftNo, rightNo     *canvas.Text
-	leftMark, rightMark *canvas.Text
-	leftCode, rightCode *canvas.Text
-	content             *fyne.Container
+	leftBG, rightBG       *canvas.Rectangle
+	leftNumBg, rightNumBg *canvas.Rectangle
+	leftNo, rightNo       *canvas.Text
+	leftMark, rightMark   *canvas.Text
+	leftCode, rightCode   *canvas.Text
+	content               *fyne.Container
 }
 
 func newSplitRowWidget() *splitRowWidget {
 	r := &splitRowWidget{
-		leftBG:    canvas.NewRectangle(colorCtxBg),
-		rightBG:   canvas.NewRectangle(colorCtxBg),
-		leftNo:    canvas.NewText("", colorLineNoFg),
-		rightNo:   canvas.NewText("", colorLineNoFg),
-		leftMark:  canvas.NewText("", theme.ForegroundColor()),
-		rightMark: canvas.NewText("", theme.ForegroundColor()),
-		leftCode:  canvas.NewText("", theme.ForegroundColor()),
-		rightCode: canvas.NewText("", theme.ForegroundColor()),
+		leftBG:     canvas.NewRectangle(colorCtxBg),
+		rightBG:    canvas.NewRectangle(colorCtxBg),
+		leftNumBg:  canvas.NewRectangle(colorLineNoBg),
+		rightNumBg: canvas.NewRectangle(colorLineNoBg),
+		leftNo:     canvas.NewText("", colorLineNoFg),
+		rightNo:    canvas.NewText("", colorLineNoFg),
+		leftMark:   canvas.NewText("", theme.ForegroundColor()),
+		rightMark:  canvas.NewText("", theme.ForegroundColor()),
+		leftCode:   canvas.NewText("", theme.ForegroundColor()),
+		rightCode:  canvas.NewText("", theme.ForegroundColor()),
 	}
 	for _, t := range []*canvas.Text{r.leftNo, r.rightNo} {
 		t.TextSize = 11
@@ -264,15 +286,14 @@ func newSplitRowWidget() *splitRowWidget {
 	r.leftMark.Alignment = fyne.TextAlignCenter
 	r.rightMark.Alignment = fyne.TextAlignCenter
 
-	left := halfPane(r.leftBG, r.leftNo, r.leftMark, r.leftCode)
-	right := halfPane(r.rightBG, r.rightNo, r.rightMark, r.rightCode)
+	left := halfPane(r.leftBG, r.leftNumBg, r.leftNo, r.leftMark, r.leftCode)
+	right := halfPane(r.rightBG, r.rightNumBg, r.rightNo, r.rightMark, r.rightCode)
 	r.content = container.New(layout.NewGridLayout(2), left, right)
 	r.ExtendBaseWidget(r)
 	return r
 }
 
-func halfPane(bg *canvas.Rectangle, num, mark, code *canvas.Text) fyne.CanvasObject {
-	numBg := canvas.NewRectangle(colorLineNoBg)
+func halfPane(bg, numBg *canvas.Rectangle, num, mark, code *canvas.Text) fyne.CanvasObject {
 	numBox := container.NewStack(numBg, num)
 	// Do not reuse `bg` in markBox — a CanvasObject may only have one parent.
 	markBox := container.NewCenter(mark)
@@ -293,9 +314,13 @@ func (r *splitRowWidget) Set(row diff.SplitRow) {
 	rbg, rfg := splitStyle(row.NewKind)
 	r.leftBG.FillColor = lbg
 	r.rightBG.FillColor = rbg
+	r.leftNumBg.FillColor = colorLineNoBg
+	r.rightNumBg.FillColor = colorLineNoBg
 
 	r.leftNo.Text = lineNo(row.OldNo)
+	r.leftNo.Color = colorLineNoFg
 	r.rightNo.Text = lineNo(row.NewNo)
+	r.rightNo.Color = colorLineNoFg
 	r.leftMark.Text = markFor(row.OldKind)
 	r.rightMark.Text = markFor(row.NewKind)
 	r.leftMark.Color = lfg
@@ -307,6 +332,8 @@ func (r *splitRowWidget) Set(row diff.SplitRow) {
 
 	r.leftBG.Refresh()
 	r.rightBG.Refresh()
+	r.leftNumBg.Refresh()
+	r.rightNumBg.Refresh()
 	r.leftNo.Refresh()
 	r.rightNo.Refresh()
 	r.leftMark.Refresh()

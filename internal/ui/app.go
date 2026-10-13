@@ -34,10 +34,11 @@ type App struct {
 	selectedBranch string
 	selectedCommit int
 	selectedFile   int
-	threeDot        bool
-	hideBinary      bool
-	viewMode        string // "commits" or "compare"
-	preferCommitTab bool   // keep Commit tab visible while loading files after commit select
+	threeDot       bool
+	hideBinary     bool
+	viewMode       string // "commits" or "compare"
+	// ignoreFileSelection skips diff loading while a commit change resets the file list.
+	ignoreFileSelection bool
 
 	repoLabel       *widget.Label
 	branchList      *widget.List
@@ -95,7 +96,7 @@ func (a *App) mainMenu() *fyne.MainMenu {
 			a.clearCommitSelection()
 			a.commitList.UnselectAll()
 			a.spec = git.WorkingDiffSpec()
-			a.loadFiles()
+			a.loadFiles(true)
 			a.showDiffTab()
 			a.setStatus("Working tree changes vs HEAD")
 		}),
@@ -175,9 +176,7 @@ func (a *App) build() {
 		}
 		a.spec = git.CommitDiffSpec(a.commits[id].Hash)
 		a.updateCommitPane()
-		a.preferCommitTab = true
-		a.loadFiles()
-		a.preferCommitTab = false
+		a.loadFiles(false)
 		a.showCommitTab()
 	}
 
@@ -192,18 +191,20 @@ func (a *App) build() {
 		},
 	)
 	a.fileList.OnSelected = func(id widget.ListItemID) {
+		if a.ignoreFileSelection {
+			return
+		}
 		a.selectedFile = id
 		a.loadDiff()
-		if !a.preferCommitTab {
-			a.showDiffTab()
-		}
+		a.showDiffTab()
 	}
 
-	a.hideBinaryCheck = widget.NewCheck("Hide binary", func(on bool) {
-		a.hideBinary = on
-		a.applyFileFilter()
-	})
+	a.hideBinaryCheck = widget.NewCheck("Hide binary", nil)
 	a.hideBinaryCheck.SetChecked(true)
+	a.hideBinaryCheck.OnChanged = func(on bool) {
+		a.hideBinary = on
+		a.applyFileFilter(true)
+	}
 
 	a.baseSelect = widget.NewSelect(nil, nil)
 	a.headSelect = widget.NewSelect(nil, nil)
@@ -396,7 +397,7 @@ func (a *App) runCompare() {
 	a.commits = commits
 	a.commitList.Refresh()
 	a.reviewTabs.SelectIndex(0)
-	a.loadFiles()
+	a.loadFiles(true)
 	sep := "..."
 	if !a.threeDot {
 		sep = ".."
@@ -404,19 +405,19 @@ func (a *App) runCompare() {
 	a.setStatus("Comparing %s%s%s — %d commits", base, sep, head, len(commits))
 }
 
-func (a *App) loadFiles() {
+func (a *App) loadFiles(selectFile bool) {
 	files, err := a.repo.ChangedFiles(a.spec)
 	if err != nil {
 		dialog.ShowError(err, a.win)
 		return
 	}
 	a.allFiles = files
-	a.applyFileFilter()
+	a.applyFileFilter(selectFile)
 }
 
-func (a *App) applyFileFilter() {
+func (a *App) applyFileFilter(selectFile bool) {
 	prevPath := ""
-	if a.selectedFile >= 0 && a.selectedFile < len(a.files) {
+	if selectFile && a.selectedFile >= 0 && a.selectedFile < len(a.files) {
 		prevPath = a.files[a.selectedFile].Path
 	}
 
@@ -431,6 +432,11 @@ func (a *App) applyFileFilter() {
 		a.setStatus("%d changed files (%d binary hidden)", len(a.files), hidden)
 	default:
 		a.setStatus("%d changed files", len(a.files))
+	}
+
+	if !selectFile {
+		a.clearChangedFileSelection()
+		return
 	}
 
 	if len(a.files) == 0 {
@@ -449,6 +455,30 @@ func (a *App) applyFileFilter() {
 		}
 	}
 	a.fileList.Select(selectIdx)
+}
+
+// clearChangedFileSelection drops the Changed files highlight after a new commit
+// is chosen. Fyne can leave a row painted as selected when the list contents
+// change, especially if the selected index stays the same. Selecting the first
+// row forces that highlight to the top, then UnselectAll removes it. If the
+// list cannot show an empty selection, the first row stays selected.
+func (a *App) clearChangedFileSelection() {
+	a.selectedFile = -1
+	a.diffView.Clear()
+	a.fileHeader.SetText("")
+	if len(a.files) == 0 {
+		a.fileList.UnselectAll()
+		a.fileList.Refresh()
+		return
+	}
+
+	a.ignoreFileSelection = true
+	a.fileList.Select(0)
+	a.ignoreFileSelection = false
+	a.selectedFile = -1
+	a.fileList.UnselectAll()
+	a.fileList.Refresh()
+	a.fileList.ScrollToTop()
 }
 
 func filterFiles(files []git.ChangedFile, hideBinary bool) []git.ChangedFile {

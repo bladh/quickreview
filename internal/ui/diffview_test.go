@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
@@ -38,4 +39,32 @@ func TestDiffViewSplitModeDoesNotPanic(t *testing.T) {
 	row := newSplitRowWidget()
 	row.Set(fd.ToSplit()[1])
 	row.Resize(row.MinSize())
+}
+
+func TestUnifiedRowLineNoFollowsPalette(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	applyDiffPalette(false)
+	row := newUnifiedRowWidget()
+	ln := diff.Line{Kind: diff.KindContext, Text: "keep", OldNo: 1, NewNo: 1}
+	row.Set(ln)
+	if !sameColor(row.lineNoBg.FillColor, color.NRGBA{R: 0x25, G: 0x26, B: 0x2b, A: 0xff}) {
+		t.Fatalf("dark lineNoBg: %#v", row.lineNoBg.FillColor)
+	}
+
+	applyDiffPalette(true)
+	row.Set(ln)
+	if !sameColor(row.lineNoBg.FillColor, color.NRGBA{R: 0xf6, G: 0xf8, B: 0xfa, A: 0xff}) {
+		t.Fatalf("light lineNoBg stayed dark: %#v", row.lineNoBg.FillColor)
+	}
+	if !sameColor(row.oldNo.Color, color.NRGBA{R: 0x65, G: 0x6d, B: 0x76, A: 0xff}) {
+		t.Fatalf("light lineNoFg: %#v", row.oldNo.Color)
+	}
+}
+
+func sameColor(got, want color.Color) bool {
+	gr, gg, gb, ga := got.RGBA()
+	wr, wg, wb, wa := want.RGBA()
+	return gr == wr && gg == wg && gb == wb && ga == wa
 }

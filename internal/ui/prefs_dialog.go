@@ -99,13 +99,7 @@ func (a *App) showPreferences() {
 func (a *App) applyColorScheme(scheme string) {
 	applyTheme(a.fyneApp, scheme)
 	if a.diffView != nil {
-		a.diffView.empty.Color = colorLineNoFg
-		a.diffView.empty.Refresh()
-		// Re-apply current diff so row colors pick up the new palette.
-		if a.diffView.fd.Binary || len(a.diffView.fd.Hunks) > 0 || a.diffView.fd.Raw != "" {
-			a.diffView.SetDiff(a.diffView.fd)
-		}
-		a.diffView.Refresh()
+		a.diffView.applyPalette()
 	}
 	if a.win != nil && a.win.Content() != nil {
 		a.win.Content().Refresh()
