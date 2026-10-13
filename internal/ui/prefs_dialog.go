@@ -57,6 +57,11 @@ func (a *App) showPreferences() {
 	}
 	sortSelect.Required = true
 
+	assetsEntry := widget.NewMultiLineEntry()
+	assetsEntry.SetText(a.prefs.AssetExtensions)
+	assetsEntry.SetPlaceHolder(".png .jpg .svg .wav …")
+	assetsEntry.SetMinRowsVisible(3)
+
 	form := container.NewVBox(
 		widget.NewLabelWithStyle("Default repository browse location", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewLabel("Used as the starting folder for File → Open Repository."),
@@ -69,6 +74,10 @@ func (a *App) showPreferences() {
 		widget.NewLabelWithStyle("Branch list sorting", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewLabel("How branches are ordered in the Branches pane (current branch stays first)."),
 		sortSelect,
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle("Asset file extensions", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Used by Hide assets in Changed files. Separate with spaces or commas. Config formats like .xml are not assets by default."),
+		assetsEntry,
 	)
 
 	d := dialog.NewCustomConfirm("Preferences", "Save", "Cancel", container.NewVScroll(form), func(ok bool) {
@@ -86,13 +95,16 @@ func (a *App) showPreferences() {
 		a.prefs.DefaultBrowsePath = pathEntry.Text
 		a.prefs.ColorScheme = scheme
 		a.prefs.BranchSort = sortMode
+		a.prefs.AssetExtensions = normalizeAssetExtensions(assetsEntry.Text)
 		a.prefs.save(a.fyneApp)
 		a.applyColorScheme(scheme)
 		if a.repo != nil {
 			a.reloadRepo()
+		} else if len(a.allFiles) > 0 {
+			a.applyFileFilter(true)
 		}
 	}, a.win)
-	d.Resize(fyne.NewSize(560, 480))
+	d.Resize(fyne.NewSize(560, 560))
 	d.Show()
 }
 

@@ -36,6 +36,7 @@ type App struct {
 	selectedFile   int
 	threeDot       bool
 	hideBinary     bool
+	hideAssets     bool
 	viewMode       string // "commits" or "compare"
 	// ignoreFileSelection skips diff loading while a commit change resets the file list.
 	ignoreFileSelection bool
@@ -54,6 +55,7 @@ type App struct {
 	headSelect      *widget.Select
 	threeDotCheck   *widget.Check
 	hideBinaryCheck *widget.Check
+	hideAssetsCheck *widget.Check
 }
 
 // Run creates the window and starts the UI.
@@ -67,6 +69,7 @@ func Run(fyneApp fyne.App, initialPath string) {
 		selectedFile:   -1,
 		threeDot:       true,
 		hideBinary:     true,
+		hideAssets:     true,
 		viewMode:       "commits",
 	}
 	a.win = fyneApp.NewWindow("QuickReview")
@@ -206,6 +209,13 @@ func (a *App) build() {
 		a.applyFileFilter(true)
 	}
 
+	a.hideAssetsCheck = widget.NewCheck("Hide assets", nil)
+	a.hideAssetsCheck.SetChecked(true)
+	a.hideAssetsCheck.OnChanged = func(on bool) {
+		a.hideAssets = on
+		a.applyFileFilter(true)
+	}
+
 	a.baseSelect = widget.NewSelect(nil, nil)
 	a.headSelect = widget.NewSelect(nil, nil)
 	a.threeDotCheck = widget.NewCheck("Three-dot (GitHub PR style)", func(on bool) {
@@ -256,9 +266,10 @@ func (a *App) layout() fyne.CanvasObject {
 		widget.NewLabelWithStyle("Branches", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		nil, nil, nil, a.branchList,
 	)
+	fileFilters := container.NewHBox(a.hideAssetsCheck, a.hideBinaryCheck)
 	filesHeader := container.NewBorder(nil, nil,
 		widget.NewLabelWithStyle("Changed files", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		a.hideBinaryCheck, nil)
+		fileFilters, nil)
 	filesPane := container.NewBorder(filesHeader, nil, nil, nil, a.fileList)
 
 	// Three movable panes under the detail view: Branches | Commits/Compare | Files
@@ -421,15 +432,15 @@ func (a *App) applyFileFilter(selectFile bool) {
 		prevPath = a.files[a.selectedFile].Path
 	}
 
-	a.files = filterFiles(a.allFiles, a.hideBinary)
+	a.files = filterFiles(a.allFiles, a.hideBinary, a.hideAssets, a.prefs.assetExtSet())
 	a.selectedFile = -1
 	a.fileList.UnselectAll()
 	a.fileList.Refresh()
 
 	hidden := len(a.allFiles) - len(a.files)
 	switch {
-	case a.hideBinary && hidden > 0:
-		a.setStatus("%d changed files (%d binary hidden)", len(a.files), hidden)
+	case hidden > 0 && (a.hideBinary || a.hideAssets):
+		a.setStatus("%d changed files (%d hidden)", len(a.files), hidden)
 	default:
 		a.setStatus("%d changed files", len(a.files))
 	}
@@ -481,17 +492,21 @@ func (a *App) clearChangedFileSelection() {
 	a.fileList.ScrollToTop()
 }
 
-func filterFiles(files []git.ChangedFile, hideBinary bool) []git.ChangedFile {
-	if !hideBinary {
+func filterFiles(files []git.ChangedFile, hideBinary, hideAssets bool, assetExts map[string]struct{}) []git.ChangedFile {
+	if !hideBinary && !hideAssets {
 		out := make([]git.ChangedFile, len(files))
 		copy(out, files)
 		return out
 	}
 	out := make([]git.ChangedFile, 0, len(files))
 	for _, f := range files {
-		if !f.Binary {
-			out = append(out, f)
+		if hideBinary && f.Binary {
+			continue
 		}
+		if hideAssets && isAssetPath(f.Path, assetExts) {
+			continue
+		}
+		out = append(out, f)
 	}
 	return out
 }
