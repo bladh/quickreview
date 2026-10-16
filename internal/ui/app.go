@@ -17,6 +17,9 @@ import (
 	"github.com/bladh/quickreview/internal/git"
 )
 
+// uncommittedChangesLabel is the commit-list row for a dirty working tree.
+const uncommittedChangesLabel = "Uncommitted changes"
+
 // App is the main review window controller.
 type App struct {
 	fyneApp fyne.App
@@ -177,7 +180,11 @@ func (a *App) build() {
 		if id < 0 || id >= len(a.commits) {
 			return
 		}
-		a.spec = git.CommitDiffSpec(a.commits[id].Hash)
+		if a.commits[id].Uncommitted {
+			a.spec = git.WorkingDiffSpec()
+		} else {
+			a.spec = git.CommitDiffSpec(a.commits[id].Hash)
+		}
 		a.updateCommitPane()
 		a.loadFiles(false)
 		a.showCommitTab()
@@ -384,12 +391,44 @@ func (a *App) loadCommits(ref string) {
 		dialog.ShowError(err, a.win)
 		return
 	}
+	if a.isCurrentBranch(ref) {
+		dirty, err := a.repo.HasUncommittedChanges()
+		if err != nil {
+			dialog.ShowError(err, a.win)
+		} else if dirty {
+			commits = append([]git.Commit{{
+				Uncommitted: true,
+				ShortHash:   "*",
+				Subject:     uncommittedChangesLabel,
+			}}, commits...)
+		}
+	}
 	a.commits = commits
 	a.commitList.UnselectAll()
 	a.commitList.Refresh()
 	a.clearCommitSelection()
 	a.clearFiles()
-	a.setStatus("%s — %d commits", ref, len(commits))
+	n := len(commits)
+	if n > 0 && commits[0].Uncommitted {
+		a.setStatus("%s — uncommitted changes, %d commits", ref, n-1)
+		return
+	}
+	a.setStatus("%s — %d commits", ref, n)
+}
+
+// isCurrentBranch reports whether ref is the branch checked out in the work tree.
+// Uncommitted changes belong to that branch only.
+func (a *App) isCurrentBranch(ref string) bool {
+	for _, b := range a.branches {
+		if b.Name == ref {
+			return b.Current
+		}
+	}
+	if a.repo == nil {
+		return false
+	}
+	cur, err := a.repo.CurrentBranch()
+	return err == nil && cur == ref
 }
 
 func (a *App) runCompare() {

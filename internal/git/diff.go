@@ -1,7 +1,11 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -52,9 +56,21 @@ func RangeDiffSpec(base, head string, threeDot bool) DiffSpec {
 	return DiffSpec{Mode: "range", Base: base, Head: head, ThreeDot: threeDot}
 }
 
-// WorkingDiffSpec compares the working tree (and index) to HEAD.
+// WorkingDiffSpec compares the working tree and index to HEAD, including
+// untracked files.
 func WorkingDiffSpec() DiffSpec {
 	return DiffSpec{Mode: "working"}
+}
+
+// HasUncommittedChanges reports whether the index or work tree differs from
+// HEAD, including untracked files. The result always describes the checked-out
+// branch.
+func (r *Repo) HasUncommittedChanges() (bool, error) {
+	out, err := r.run("status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 func (r *Repo) revArgs(spec DiffSpec) ([]string, error) {
@@ -113,11 +129,27 @@ func (r *Repo) ChangedFiles(spec DiffSpec) ([]ChangedFile, error) {
 		return nil, err
 	}
 	applyNumstat(files, statOut)
+	if spec.Mode == "working" {
+		extra, err := r.untrackedFiles()
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, extra...)
+	}
 	return files, nil
 }
 
 // FileDiff returns the unified diff text for a single path.
 func (r *Repo) FileDiff(spec DiffSpec, path string) (string, error) {
+	if spec.Mode == "working" {
+		untracked, err := r.isUntracked(path)
+		if err != nil {
+			return "", err
+		}
+		if untracked {
+			return r.diffUntracked(path)
+		}
+	}
 	revs, err := r.revArgs(spec)
 	if err != nil {
 		return "", err
@@ -137,6 +169,92 @@ func (r *Repo) FileContentAt(ref, path string) (string, error) {
 		return "", err
 	}
 	return out, nil
+}
+
+func (r *Repo) untrackedFiles() ([]ChangedFile, error) {
+	out, err := r.run("ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, err
+	}
+	paths := splitNUL(out)
+	files := make([]ChangedFile, 0, len(paths))
+	for _, path := range paths {
+		additions, binary := workingFileChurn(filepath.Join(r.Path, filepath.FromSlash(path)))
+		files = append(files, ChangedFile{
+			Path:      path,
+			Status:    StatusAdded,
+			Additions: additions,
+			Binary:    binary,
+		})
+	}
+	return files, nil
+}
+
+func (r *Repo) isUntracked(path string) (bool, error) {
+	out, err := r.run("ls-files", "--others", "--exclude-standard", "-z", "--", path)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range splitNUL(out) {
+		if p == path {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *Repo) diffUntracked(path string) (string, error) {
+	// --no-index exits 1 when the file differs from /dev/null.
+	return runAllowing(r.Path, map[int]struct{}{1: {}},
+		"diff", "--no-index", "--unified=3", "--", "/dev/null", path)
+}
+
+func workingFileChurn(path string) (additions int, binary bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 32*1024)
+	sawBytes := false
+	partial := false
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if bytes.IndexByte(chunk, 0) >= 0 {
+				return 0, true
+			}
+			sawBytes = true
+			additions += bytes.Count(chunk, []byte{'\n'})
+			partial = chunk[n-1] != '\n'
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return additions, false
+		}
+	}
+	if sawBytes && partial {
+		additions++
+	}
+	return additions, false
+}
+
+func splitNUL(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, "\x00")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func parseNameStatus(out string) ([]ChangedFile, error) {

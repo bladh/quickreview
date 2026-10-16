@@ -66,6 +66,12 @@ func newCommitRow() *commitRow {
 }
 
 func (r *commitRow) Set(c git.Commit) {
+	if c.Uncommitted {
+		r.hash.SetText("*")
+		r.subj.SetText(uncommittedChangesLabel)
+		r.meta.SetText("working tree vs HEAD")
+		return
+	}
 	r.hash.SetText(c.ShortHash)
 	r.subj.SetText(c.Subject)
 	r.meta.SetText(fmt.Sprintf("%s · %s", c.Author, formatDate(c.Date)))

@@ -141,6 +141,10 @@ func (p *CommitPane) Clear() {
 }
 
 func (p *CommitPane) Set(c git.Commit, branch string) {
+	if c.Uncommitted {
+		p.SetUncommitted(branch)
+		return
+	}
 	p.empty.Hide()
 	p.scroll.Show()
 
@@ -158,6 +162,24 @@ func (p *CommitPane) Set(c git.Commit, branch string) {
 	p.email.Set(c.Email)
 	p.date.Set(formatDate(c.Date))
 	p.subjectF.Set(c.Subject)
+	p.scroll.Offset = fyne.NewPos(0, 0)
+	p.scroll.Refresh()
+}
+
+// SetUncommitted shows the working-tree row, which has no commit metadata.
+func (p *CommitPane) SetUncommitted(branch string) {
+	p.empty.Hide()
+	p.scroll.Show()
+
+	p.subject.SetText(uncommittedChangesLabel)
+	p.body.SetText("Staged, unstaged, and untracked changes in the working tree, compared with HEAD.")
+	p.shortHash.Set("")
+	p.fullHash.Set("")
+	p.branch.Set(branch)
+	p.author.Set("")
+	p.email.Set("")
+	p.date.Set("")
+	p.subjectF.Set(uncommittedChangesLabel)
 	p.scroll.Offset = fyne.NewPos(0, 0)
 	p.scroll.Refresh()
 }

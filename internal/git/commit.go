@@ -16,6 +16,9 @@ type Commit struct {
 	Date      time.Time
 	Subject   string
 	Body      string
+	// Uncommitted marks the synthetic working-tree row shown above the log.
+	// It is not a real commit and must not be passed to git.
+	Uncommitted bool
 }
 
 const logFormat = "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e"

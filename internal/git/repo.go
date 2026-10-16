@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,12 +42,25 @@ func (r *Repo) run(args ...string) (string, error) {
 }
 
 func run(dir string, args ...string) (string, error) {
+	return runAllowing(dir, nil, args...)
+}
+
+// runAllowing is like run, but treats the given exit codes as success.
+// git diff --no-index exits 1 when the files differ.
+func runAllowing(dir string, allow map[int]struct{}, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && allow != nil {
+			if _, ok := allow[exitErr.ExitCode()]; ok {
+				return stdout.String(), nil
+			}
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
